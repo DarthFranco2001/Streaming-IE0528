@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Jovani Vázquez – Streaming oficial</title>
+  <style>
+    :root{
+      --bg:#0b0f17; --card:#121826; --muted:#94a3b8; --ring:#38bdf8;
+      --text:#e5e7eb; --accent:#1f2937; --brand:#38bdf8; --ok:#22c55e; --warn:#f59e0b;
+    }
+    *{box-sizing:border-box}
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:linear-gradient(180deg,#0b0f17,#0a0f1a);color:var(--text)}
+    header{max-width:1000px;margin:24px auto 12px;padding:0 16px}
+    h1{margin:0 0 8px;font-size:clamp(22px,3.5vw,34px);letter-spacing:.4px}
+    p.sub{margin:0;color:var(--muted)}
+    main{max-width:1000px;margin:0 auto;padding:8px 16px 40px}
+
+    .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-top:16px}
+    .card{background:var(--card);border:1px solid #1f2937;border-radius:16px;padding:14px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+    .card h3{margin:0 0 8px;font-size:16px}
+    .row{display:flex;align-items:center;gap:8px;margin-top:10px}
+    .count{font-weight:600}
+    .pill{display:inline-flex;align-items:center;gap:6px;background:#0f172a;border:1px solid #1f2937;color:var(--muted);padding:6px 10px;border-radius:999px;font-size:12px}
+
+    .btn{appearance:none;border:1px solid #1f2937;background:#0f172a;color:#e5e7eb;border-radius:12px;padding:8px 12px;font-weight:600;cursor:pointer;transition:.2s;}
+    .btn:hover{border-color:#2b3445;transform:translateY(-1px)}
+    .btn.primary{background:linear-gradient(180deg,#0ea5e9,#0284c7);border-color:#0284c7}
+
+    /* Player */
+    .player{display:grid;gap:14px}
+    video{width:100%;max-width:100%;height:auto;background:#000;border-radius:14px;border:1px solid #1f2937}
+    .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#0f172a;border:1px solid #1f2937;border-radius:12px;padding:10px}
+    .controls .btn{min-width:110px}
+    .time{font-variant-numeric:tabular-nums;color:var(--muted)}
+    .progress{flex:1;display:flex;align-items:center;gap:8px}
+    .progress input[type=range]{flex:1;appearance:none;height:6px;background:#0b1220;border-radius:999px;outline:none}
+    .badge{padding:3px 8px;border-radius:10px;background:#12263b;color:#93c5fd;border:1px solid #1d3452;font-size:12px}
+    nav a{color:#93c5fd;text-decoration:none}
+    nav a:hover{text-decoration:underline}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Jovani Vázquez – <span style="color:var(--brand)">Streaming oficial</span></h1>
+    <p class="sub">Selecciona uno de los streams para reproducirlo. Cada vista se contabiliza al presionar “Reproducir” <em>cuando el video está en pausa</em>.</p>
+  </header>
+  <main id="app"></main>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script>
+    //const API_BASE = 'http://localhost:3000';
+    // const API_BASE = `${location.protocol}//${location.hostname}:3000`;
+    const API_BASE = 'https://ie0528-streaming.onrender.com';
+
+    const VIDEOS = [
+      { id:'v1', title:'Víctor le dice a Joel' },
+      { id:'v2', title:'Moluscto TV' },
+      { id:'v3', title:'Elden Ring' },
+      { id:'v4', title:'Noches de fantasía' },
+      { id:'v5', title:'Viernes' },
+    ];
+
+    const $ = (sel,root=document)=>root.querySelector(sel);
+    const $$ = (sel,root=document)=>Array.from(root.querySelectorAll(sel));
+
+    let hls = null;
+    let currentId = null;
+
+    async function fetchCount(id){
+      try {
+        const r = await fetch(`${API_BASE}/api/stats/${id}`, { cache: 'no-store' });
+        const j = await r.json();
+        return j.totalById ?? 0;
+      } catch { return 0; }
+    }
+    async function registerPlay(id){
+      try {
+        const r = await fetch(`${API_BASE}/api/play/${id}`, { method:'POST', cache:'no-store' });
+        const j = await r.json();
+        return j.totalById ?? 0;
+      } catch { return fetchCount(id); }
+    }
+
+    async function Home(){
+      const counts = Object.fromEntries(await Promise.all(
+        VIDEOS.map(async v => [v.id, await fetchCount(v.id)])
+      ));
+
+      const grid = `
+        <div class="grid">
+          ${VIDEOS.map(v => `
+            <div class="card">
+              <h3>${v.title}</h3>
+              <div class="row">
+                <button class="btn primary" data-go="${v.id}">▶ Reproducir</button>
+                <span class="pill">Plays: <strong id="count-${v.id}" class="count" style="margin-left:6px">${counts[v.id]}</strong></span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      const el = document.createElement('div');
+      el.innerHTML = grid;
+      $$("[data-go]", el).forEach(btn => btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-go');
+        location.hash = `#/` + id;
+      }));
+      return el;
+    }
+
+    async function Player(id){
+      const meta = VIDEOS.find(v => v.id === id);
+      const wrap = document.createElement('div');
+      wrap.className = 'player';
+      wrap.innerHTML = `
+        <nav>← <a href="#/">Volver</a></nav>
+        <h2 style="margin:4px 0 0">${meta ? meta.title : id}</h2>
+        <div class="badge">ID: ${id}</div>
+        <video id="player" playsinline controls></video>
+        <div class="controls">
+          <button id="btnPlay" class="btn primary">▶ Reproducir</button>
+          <button id="btnPause" class="btn">⏸️ Pausar</button>
+          <div class="progress">
+            <input id="seek" type="range" min="0" max="0" value="0" step="0.01" />
+            <span class="time"><span id="tcur">0:00</span> / <span id="tdur">–:–</span></span>
+          </div>
+          <span class="pill">Plays: <strong id="count" class="count" style="margin-left:6px">…</strong></span>
+        </div>
+      `;
+
+      const video = $('#player', wrap);
+      const btnPlay = $('#btnPlay', wrap);
+      const btnPause = $('#btnPause', wrap);
+      const seek = $('#seek', wrap);
+      const tcur = $('#tcur', wrap);
+      const tdur = $('#tdur', wrap);
+      const countEl = $('#count', wrap);
+
+      // NEW: estado para contar solo una vez por "sesión de reproducción"
+      let countedThisPlay = false; // se vuelve true cuando pasamos de pausado->play
+      const resetCounterGate = () => { countedThisPlay = false; }; // al pausar/terminar, permitir contar de nuevo
+
+      // Contador inicial
+      countEl.textContent = await fetchCount(id);
+
+      // Cargar HLS (limpiar previos)
+      const hlsUrl = `${API_BASE}/hls/${id}/stream.m3u8`;
+      if (hls) { try { hls.destroy(); } catch {} hls = null; }
+      currentId = id;
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = hlsUrl; // Safari
+      } else if (window.Hls && Hls.isSupported()) {
+        hls = new Hls({maxBufferLength: 10});
+        hls.loadSource(hlsUrl);
+        hls.attachMedia(video);
+      } else {
+        video.replaceWith(Object.assign(document.createElement('div'),{textContent:'Tu navegador no soporta HLS'}));
+      }
+
+      // NEW: cuando se carga una nueva fuente, aún no hemos contado esta reproducción
+      video.addEventListener('loadedmetadata', () => { countedThisPlay = false; });
+
+      // Utilidades de tiempo
+      const fmt = s => {
+        if (!isFinite(s)) return '—:—';
+        s = Math.max(0, s|0); const m = (s/60)|0, r = (s%60)|0; return `${m}:${r.toString().padStart(2,'0')}`;
+      };
+
+      function updateUI(){
+        const d = video.duration;
+        const t = video.currentTime;
+        tcur.textContent = fmt(t);
+        tdur.textContent = isFinite(d) ? fmt(d) : 'EN VIVO';
+        if (isFinite(d)) {
+          seek.max = d; seek.disabled = false; seek.value = t;
+        } else {
+          seek.disabled = true; seek.value = 0; seek.max = 0;
+        }
+      }
+
+      video.addEventListener('timeupdate', updateUI);
+      video.addEventListener('durationchange', updateUI);
+      const uiTimer = setInterval(updateUI, 500);
+
+      // NEW: botón reproducir solo suma si está pausado y aún no se contó esta sesión
+      btnPlay.addEventListener('click', async () => {
+        if (video.paused && !countedThisPlay) {
+          countEl.textContent = await registerPlay(id);
+          countedThisPlay = true;
+        }
+        try { await video.play(); } catch(e){ console.warn(e); }
+      });
+
+      btnPause.addEventListener('click', () => {
+        video.pause();
+        resetCounterGate(); // NEW: permitir que el próximo play vuelva a contar
+      });
+
+      // NEW: si el usuario pausa manualmente (con controles nativos), resetear compuerta
+      video.addEventListener('pause', () => { resetCounterGate(); });
+
+      // NEW: al terminar el video también reseteamos
+      video.addEventListener('ended', () => { resetCounterGate(); });
+
+      // Seek
+      seek.addEventListener('input', () => {
+        if (isFinite(video.duration)) video.currentTime = Number(seek.value);
+      });
+
+      // Limpieza al desmontar
+      wrap.$cleanup = () => {
+        clearInterval(uiTimer);
+        if (hls) { try { hls.destroy(); } catch {} hls = null; }
+      };
+      return wrap;
+    }
+
+    // Router
+    const app = document.getElementById('app');
+    let mounted = null;
+
+    async function render(){
+      const hash = location.hash.replace(/^#\/?/, '');
+      const [route, param] = hash.split('/');
+
+      if (mounted && mounted.$cleanup) mounted.$cleanup();
+      app.innerHTML = '';
+
+      if (!route) {
+        mounted = await Home();
+      } else {
+        const id = route.startsWith('v') ? route : param;
+        mounted = await Player(id);
+      }
+      app.appendChild(mounted);
+    }
+
+    window.addEventListener('hashchange', render);
+    render();
+  </script>
+</body>
+</html>
